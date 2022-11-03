@@ -40,3 +40,8 @@ class RestrictedUser(BaseModel):
 
     class Meta:
         table_name = "restricted_user"
+
+
+class Config(BaseModel):
+    key = PrimaryKeyField()
+    value = TextField(null=False)
