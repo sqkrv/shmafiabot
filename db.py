@@ -1,4 +1,3 @@
-# from sqlite3 import Connection
 from peewee import SqliteDatabase, Model, TextField, PrimaryKeyField, ForeignKeyField, BooleanField
 
 db = SqliteDatabase("shmafiabot.db")
@@ -9,12 +8,13 @@ class BaseModel(Model):
         database = db
 
 
-class Member(BaseModel):
+class User(BaseModel):
     user_id = PrimaryKeyField()
     username = TextField(unique=True)
     first_name = TextField()
     last_name = TextField()
     bot = BooleanField(null=False, default=False)
+    member = BooleanField(null=False, default=True)
 
 
 class MentionGroup(BaseModel):
@@ -28,15 +28,15 @@ class MentionGroup(BaseModel):
 class GroupAffiliation(BaseModel):
     # id = PrimaryKeyField()
     mention_group_id = ForeignKeyField(MentionGroup, 'id')
-    member_id = ForeignKeyField(Member, 'user_id')
+    user_id = ForeignKeyField(User, 'user_id')
 
     class Meta:
         table_name = "group_affiliation"
 
 
-class RestrictedMember(BaseModel):
+class RestrictedUser(BaseModel):
     id = PrimaryKeyField()
-    user_id = ForeignKeyField(Member, 'user_id', null=False)
+    user_id = ForeignKeyField(User, 'user_id', null=False)
 
     class Meta:
-        table_name = "restricted_member"
+        table_name = "restricted_user"
