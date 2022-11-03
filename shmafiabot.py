@@ -1,13 +1,15 @@
+import asyncio
 import enum
-import random
 import os
+import random
+import re
 from typing import Union, List
 
 import peewee
 import pyrogram
 from pyrogram import Client, filters, types
 
-from db import Member, MentionGroup, GroupAffiliation, RestrictedMember
+from db import User, GroupAffiliation, RestrictedUser
 
 bot = Client('shmafiabot', os.getenv('API_ID'), os.getenv('API_HASH'), bot_token=os.getenv('BOT_TOKEN'))
 
@@ -19,29 +21,6 @@ class PingGroup(enum.Enum):
     DORM = 2
 
 
-# def text_message(regex: str):
-#     return filters.regex(regex) & filters.chat(CHAT_ID) & ~filters.edited & ~filters.text
-
-
-# def text_command(commands: Union[str, List[str]], case_sensitive: bool = False):
-#     """
-#     Filter for text commands.
-#
-#     :param commands:
-#         hello
-#     :param case_sensitive:
-#         whether the text case must be equal as well
-#     """
-#     async def func(flt: text_command, _, update):
-#         print(flt.kwargs)
-#         print(update)
-#         return True
-#         # return flt.text == update.data &
-#
-#     commands = commands if isinstance(commands, list) else [commands]
-#     return filters.create(func, commands=commands, case_sensitive=case_sensitive)
-
-
 def text_command(strings: Union[str, List[str]]):
     return chat_command(strings, prefix='')
 
@@ -50,11 +29,11 @@ def chat_command(commands: Union[str, List[str]], prefix: Union[str, List[str]] 
     kwargs = {}
     if prefix != 0:
         kwargs['prefixes'] = prefix
-    return filters.command(commands, **kwargs) & filters.chat(CHAT_ID)# & ~filters.edited
+    return filters.command(commands, **kwargs) & filters.chat(CHAT_ID)
 
 
 def admin_command(commands: Union[str, List[str]]):
-    return chat_command(commands) & filters.user([356786682, ])  # яся,
+    return chat_command(commands) & filters.user([356786682, 633834276, 209007669])  # яся, Марьям, дед
 
 
 async def promote_member(chat, author):
@@ -95,15 +74,6 @@ async def set_title(message, chat, author, title):
             await promote_member(chat, author)
 
 
-# @bot.on_message(filters.chat(CHAT_ID) & filters.new_chat_members)
-# async def on_new_member(_, message: types.Message):
-#     member = message.new_chat_members[0]
-#     await bot.send_message(
-#         message.chat.id,
-#         f"Привет, {member.first_name}. В чате есть placeholder. Сдохни командой /set."
-#     )
-
-
 @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
 async def set_title_command(_, message: types.Message):
     """
@@ -114,15 +84,9 @@ async def set_title_command(_, message: types.Message):
     """
     author = message.from_user
 
-    if RestrictedMember.get_or_none(RestrictedMember.user_id == author.id):
+    if RestrictedUser.get_or_none(RestrictedUser.user_id == author.id):
         await message.reply("You are restricted from changing your title.")
         return
-
-    # with open(FILENAME) as file:
-    #     restricted = json.load(file)
-    #     if author.id in restricted:
-    #         await message.reply("You are restricted from changing your title.")
-    #         return
 
     args = message.command[1:]
     if not args:
@@ -145,7 +109,7 @@ async def set_title_command(_, message: types.Message):
 @bot.on_message(admin_command(["restrict_member", "unrestrict_member"]))
 async def un_restrict_member_command(_, message: types.Message):
     """
-    Разрешить или запретить участнику устанавливать "плашку"
+    Разрешить или запретить участнику изменять "плашку"
 
     :param message:
     :return:
@@ -175,62 +139,28 @@ async def un_restrict_member_command(_, message: types.Message):
         if member:
             if to_restrict:
                 try:
-                    RestrictedMember.create(user_id=member.id)
+                    RestrictedUser.create(user_id=member.id)
                 except peewee.IntegrityError:
                     await message.reply("Specified member is already restricted.")
                     return
             else:
-                if not RestrictedMember.delete().where(RestrictedMember.user_id == member.id).execute():
+                if not RestrictedUser.delete().where(RestrictedUser.user_id == member.id).execute():
                     await message.reply("Specified member is not restricted.")
                     return
             await message.reply(f"Successfully {'un' if not to_restrict else ''}restricted access to the specified user.")
         else:
             await message.reply(f"No new users have been {'un' if not to_restrict else ''}restricted.")
 
-        # with open(FILENAME, 'r+') as file:
-        #     members = json.load(file)
-        #     entity = entities[1]
-        #     chat = message.chat
-        #     if entity.type == 'mention':
-        #         offset = entity.offset
-        #         member = message.text[offset:offset + entity.length]
-        #         try:
-        #             member = await chat.get_member(member)
-        #         except pyrogram.errors.exceptions.bad_request_400.UserNotParticipant:
-        #             await message.reply("Specified user is not a member of this chat.")
-        #             return
-        #         member = member.user
-        #     elif entity.type == 'text_mention':
-        #         member = entity.user
-        #
-        #     if member:
-        #         if restrict:
-        #             if member.id in members:
-        #                 await message.reply("Specified member is already restricted.")
-        #                 return
-        #             members.append(member.id)
-        #         else:
-        #             if member.id not in members:
-        #                 await message.reply("Specified member is not restricted.")
-        #                 return
-        #             members.remove(member.id)
-        #         file.seek(0)
-        #         file.truncate()
-        #         json.dump(members, file)
-        #         await message.reply(f"Successfully {'un' if not restrict else ''}restricted access to the specified user.")
-        #     else:
-        #         await message.reply(f"No new users have been {'un' if not restrict else ''}restricted.")
 
-
-async def ping_all_func(message: types.Message, group: PingGroup):
+async def ping_func(message: types.Message, group: PingGroup):
     chat = message.chat
     match group:
         case PingGroup.DORM:
-            # mentions = [bot.get_users(OBSCHAZHNIKI) for user_id in OBSCHAZHNIKI]
-            mentions = [user.mention for user in (await bot.get_users(GroupAffiliation.select().where(GroupAffiliation.mention_group_id == 1)))]
+            mentions = [user.mention for user in
+                        (await bot.get_users([_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
             text_part = "отметить общажников"
         case PingGroup.ALL | _:
-            mentions = [member.user.mention async for member in chat.get_members() if not member.user.username.endswith('bot')]
+            mentions = [member.user.mention async for member in chat.get_members() if not member.user.username.lower().endswith('bot')]
             text_part = "всех отметить"
 
     ping_message = ' '.join(message.command[1:]) if len(message.command) > 1 else None
@@ -245,12 +175,12 @@ async def ping_all_func(message: types.Message, group: PingGroup):
 
 @bot.on_message(text_command(["@все", "@all"]))
 async def ping_all(_, message: types.Message):
-    await ping_all_func(message, PingGroup.ALL)
+    await ping_func(message, PingGroup.ALL)
 
 
 @bot.on_message(text_command("@общажники"))
 async def ping_dorm(_, message: types.Message):
-    await ping_all_func(message, PingGroup.DORM)
+    await ping_func(message, PingGroup.DORM)
 
 
 @bot.on_message(text_command("шар"))
@@ -266,5 +196,40 @@ async def a8ball(_, message: types.Message):
         "Даже не думай", "Мой ответ — «нет»", "По моим данным — «нет»", "Перспективы не очень хорошие", "Весьма сомнительно"
     ]
     await message.reply(random.choice(ball_answers), quote=True)
+
+
+@bot.on_message(filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID))
+async def fishing_msg_deletion(_, message: types.Message):
+    if you_receive := re.search(r"Вы получаете (.+)", message.text):
+        you_receive = you_receive[1]
+    if energy_left := re.search(r"Энергии осталось: (.+)", message.text):
+        energy_left = energy_left[1]
+    if you_receive and energy_left:
+        text = f"{you_receive}\n{energy_left}"
+    elif energy_left:
+        text = f"ничего\n{energy_left}"
+    else:
+        text = f"нет энергии"
+    await message.reply(text)
+    await asyncio.sleep(1)
+    await message.delete()
+
+
+@bot.on_message(filters.media & filters.user(1264548383) & filters.chat(CHAT_ID))
+async def pipisa_bot_ad_remover(_, message: types.Message):
+    pass
+
+
+@bot.on_message(chat_command("config"))
+async def config_command(_, message: types.Message):
+    if len(message.command) < 2:
+        await message.reply("Не указаны параметры", quote=True)
+        return
+
+    match message.command[1]:
+        case 'anti_fishing':
+            pass
+        case _:
+            pass
 
 bot.run()
