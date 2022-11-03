@@ -1,6 +1,5 @@
 import asyncio
 import enum
-import os
 import random
 import re
 from typing import Union, List
@@ -37,7 +36,7 @@ class PingGroup(enum.Enum):
     DORM = 2
 
 
-class ConfigKey(enum.Enum):
+class ConfigKey:
     ANTI_FISHING = 'anti_fishing'
     ANTI_PIPISA_ADS = 'anti_pipisa_ads'
 
@@ -45,13 +44,9 @@ class ConfigKey(enum.Enum):
 async def promote_member(chat, author):
     await chat.promote_member(
         user_id=author.id,
-        can_manage_chat=False,
-        can_change_info=False,
-        can_delete_messages=False,
-        can_restrict_members=False,
-        can_invite_users=True,
-        can_promote_members=False,
-        can_manage_voice_chats=False
+        privileges=types.ChatPrivileges(
+            can_invite_users=True
+        )
     )
 
 
@@ -78,17 +73,17 @@ class ShmafiaBot:
                     title=title
                 )
             except pyrogram.errors.exceptions.bad_request_400.ChatAdminRequired:
-                await message.reply("Couldn't set the title."
-                                    "\nOne of these is a reason:"
-                                    "\n- I am not an administrator"
-                                    "\n- I cannot add new administrators"
-                                    "\n- You are already an administrator. Ask an admin to dismiss you.")
+                await message.reply("Не смог установить плашку."
+                                    "\nВозможные причины:"
+                                    "\n- Я не удминистратор"
+                                    "\n- У меня нет прав на добавление новых администраторов"
+                                    "\n- Вы уже являетесь администратором. Попросить снять с себя роль")
                 return False
             except pyrogram.errors.exceptions.bad_request_400.UserCreator:
-                await message.reply("I cannot set your title, creator.")
+                await message.reply("Я не могу установить Вашу плашку")
                 return False
             except pyrogram.errors.exceptions.bad_request_400.AdminRankInvalid:
-                await message.reply("Your title is invalid or is longer than 16 characters.")
+                await message.reply("У Вас плашка длиннее 16 символов или просто неправильная")
                 return False
             except ValueError:
                 await promote_member(chat, author)
@@ -96,7 +91,7 @@ class ShmafiaBot:
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
     async def set_title_command(self, _, message: types.Message):
         """
-        Установить или изменить "плашку".
+        Установить или изменить плашку.
 
         :param message:
         :return:
@@ -104,30 +99,30 @@ class ShmafiaBot:
         author = message.from_user
 
         if RestrictedUser.get_or_none(RestrictedUser.user_id == author.id):
-            await message.reply("You are restricted from changing your title.")
+            await message.reply("Вам запретили изменять плашку")
             return
 
         args = message.command[1:]
         if not args:
-            await message.reply("Title is not specified.")
+            await message.reply("Не указано название плашки.")
             return
 
         title = ' '.join(args)
-        print(title)
 
         chat = message.chat
 
         if result := await self._set_title(message, chat, author, title):
-            await message.reply(f"Your title has been successfully set to `{title}`.")
+            await message.reply(f"Ваша плашка была успешно изменена на `{title}`.")
         elif result is False:
             pass
         else:
-            await message.reply(f"Something went wrong.")
+            print(result)
+            await message.reply(f"Что-то пошло не так, попробуйте снова")
 
     # @bot.on_message(admin_command(["restrict_member", "unrestrict_member"]))
     async def un_restrict_member_command(self, _, message: types.Message):
         """
-        Разрешить или запретить участнику изменять "плашку"
+        Разрешить или запретить участнику изменять плашку
 
         :param message:
         :return:
@@ -174,7 +169,8 @@ class ShmafiaBot:
         match group:
             case PingGroup.DORM:
                 mentions = [user.mention for user in
-                            (await self.bot.get_users([_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
+                            (await self.bot.get_users(
+                                [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
                 text_part = "отметить общажников"
             case PingGroup.ALL | _:
                 mentions = [member.user.mention async for member in chat.get_members() if not member.user.username.lower().endswith('bot')]
@@ -241,7 +237,9 @@ class ShmafiaBot:
     # @bot.on_message(chat_command("config"))
     async def config_command(self, _, message: types.Message):
         if len(message.command) < 2:
-            await message.reply("Не указаны параметры", quote=True)
+            await message.reply("Не указаны параметры. Параметры для изменения:\n"
+                                f"• {ConfigKey.ANTI_FISHING} — режим анти-рыбалки\n"
+                                f"• {ConfigKey.ANTI_PIPISA_ADS} — режим анти-рекламы пиписы", quote=True)
             return
 
         match message.command[1]:
@@ -256,6 +254,15 @@ class ShmafiaBot:
             case _:
                 pass
 
+    async def help_command(self, _, message: types.Message):
+        await message.reply("• **/set_nametag** (**/change_nametag**) — установить/изменить плашку\n"
+                            "• **/[un]restrict_member** — запретить/разрешить участнику изменять плашку\n"
+                            "• **@__<группа>__** — упомянуть определенную группу участников\n"
+                            "• **шар** __<вопрос>__ — спросить мнение у шара\n"
+                            "• **/config** — настроить бота\n"
+                            "• **/help** — эта помощь\n\n"
+                            "||по всем вопросам, замечаниям и предложениям — @sqkrv||", parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+
     def run(self):
         self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
         self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
@@ -265,6 +272,7 @@ class ShmafiaBot:
         self.bot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
         self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
         self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
+        self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
         print("Starting bot...")
         self.bot.run()
 
