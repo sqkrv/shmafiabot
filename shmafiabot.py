@@ -10,7 +10,7 @@ import pyrogram
 from pyrogram import filters, types
 from pyrogram.handlers import MessageHandler
 
-from db import User, GroupAffiliation, RestrictedUser
+from db import User, GroupAffiliation, RestrictedUser, Config
 
 # bot = Client('shmafiabot', os.getenv('API_ID'), os.getenv('API_HASH'), bot_token=os.getenv('BOT_TOKEN'))
 
@@ -37,6 +37,11 @@ class PingGroup(enum.Enum):
     DORM = 2
 
 
+class ConfigKey(enum.Enum):
+    ANTI_FISHING = 'anti_fishing'
+    ANTI_PIPISA_ADS = 'anti_pipisa_ads'
+
+
 async def promote_member(chat, author):
     await chat.promote_member(
         user_id=author.id,
@@ -59,6 +64,10 @@ class ShmafiaBot:
             bot_token: str = None
     ):
         self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
+        self.config = {
+            ConfigKey.ANTI_FISHING: Config.get(Config.key == ConfigKey.ANTI_FISHING),
+            ConfigKey.ANTI_PIPISA_ADS: Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS),
+        }
 
     async def _set_title(self, message, chat, author, title):
         for _ in range(2):
@@ -220,7 +229,14 @@ class ShmafiaBot:
 
     # @bot.on_message(filters.media & filters.user(1264548383) & filters.chat(CHAT_ID))
     async def pipisa_bot_ad_remover(self, _, message: types.Message):
-        pass
+        await message.delete()
+        await message.reply("тут была реклама @pipisabot, а может быть Ваша")
+
+    def toggle_config_variable(self, key: Union[str, ConfigKey]) -> bool:
+        toggled = not self.config[key]
+        self.config[key] = toggled
+        Config.update(value=toggled).where(Config.key == key).execute()
+        return toggled
 
     # @bot.on_message(chat_command("config"))
     async def config_command(self, _, message: types.Message):
@@ -229,8 +245,14 @@ class ShmafiaBot:
             return
 
         match message.command[1]:
-            case 'anti_fishing':
-                pass
+            case ConfigKey.ANTI_FISHING:
+                state = self.toggle_config_variable(ConfigKey.ANTI_FISHING)
+                await message.reply(f"Режим анти-рыбалки {'включен' if state else 'отключен'}")
+                return
+            case ConfigKey.ANTI_PIPISA_ADS:
+                state = self.toggle_config_variable(ConfigKey.ANTI_PIPISA_ADS)
+                await message.reply(f"Режим анти-рекламы пиписы {'включен' if state else 'отключен'}")
+                return
             case _:
                 pass
 
@@ -241,7 +263,7 @@ class ShmafiaBot:
         self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
         self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
         self.bot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
-        self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, filters.media & filters.user(1264548383) & filters.chat(CHAT_ID)))
+        self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
         self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
         print("Starting bot...")
         self.bot.run()
