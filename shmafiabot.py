@@ -219,6 +219,7 @@ class ShmafiaBot:
 
     # @bot.on_message(filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID))
     async def fishing_msg_deletion(self, _, message: types.Message):
+        print("fishing deletion")
         if you_receive := re.search(r"Вы получаете (.+)", message.text):
             you_receive = you_receive[1]
         if energy_left := re.search(r"Энергии осталось: (.+)", message.text):
