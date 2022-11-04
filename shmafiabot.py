@@ -12,8 +12,6 @@ from pyrogram.handlers import MessageHandler
 
 from db import User, GroupAffiliation, RestrictedUser, Config
 
-# bot = Client('shmafiabot', os.getenv('API_ID'), os.getenv('API_HASH'), bot_token=os.getenv('BOT_TOKEN'))
-
 CHAT_ID = int(os.getenv('CHAT_ID'))
 
 
@@ -26,6 +24,10 @@ def chat_command(commands: Union[str, List[str]], prefix: Union[str, List[str]] 
     if prefix != 0:
         kwargs['prefixes'] = prefix
     return filters.command(commands, **kwargs) & filters.chat(CHAT_ID)
+
+
+def amsh_command(strings: Union[str, List[str]]):
+    return chat_command(strings, prefix='амш ')
 
 
 def admin_command(commands: Union[str, List[str]]):
@@ -46,7 +48,8 @@ async def promote_member(chat, author):
     await chat.promote_member(
         user_id=author.id,
         privileges=types.ChatPrivileges(
-            can_invite_users=True
+            can_manage_chat=False,
+            # can_invite_users=False
         )
     )
 
@@ -59,7 +62,14 @@ class ShmafiaBot:
             api_hash: str = None,
             bot_token: str = None
     ):
-        self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
+        self.name = name
+        self.api_id = api_id
+        self.api_hash = api_hash
+        self.bot_token = bot_token
+        self.bot = None
+        self.selfbot = None
+        # self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
+        # self.selfbot = pyrogram.Client(name+"_selfbot", api_id, api_hash)
         self.config = {
             ConfigKey.ANTI_FISHING: Config.get(Config.key == ConfigKey.ANTI_FISHING),
             ConfigKey.ANTI_PIPISA_ADS: Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS),
@@ -219,7 +229,10 @@ class ShmafiaBot:
 
     # @bot.on_message(filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID))
     async def fishing_msg_deletion(self, _, message: types.Message):
-        print("fishing deletion")
+        if not self.config['anti_fishing']:
+            return
+
+        message._client = self.bot
         if you_receive := re.search(r"Вы получаете (.+)", message.text):
             you_receive = you_receive[1]
         if energy_left := re.search(r"Энергии осталось: (.+)", message.text):
@@ -230,8 +243,9 @@ class ShmafiaBot:
             text = f"ничего\n{energy_left}"
         else:
             text = f"нет энергии"
+
         await message.reply(text)
-        await asyncio.sleep(1)
+        # await asyncio.sleep(1)
         await message.delete()
 
     # @bot.on_message(filters.media & filters.user(1264548383) & filters.chat(CHAT_ID))
@@ -270,21 +284,45 @@ class ShmafiaBot:
                             "• **/[un]restrict_member** — запретить/разрешить участнику изменять плашку\n"
                             "• **@__<группа>__** — упомянуть определенную группу участников\n"
                             "• **шар** __<вопрос>__ — спросить мнение у шара\n"
+                            "• **амш d20** — кинуть d20\n"
+                            "• **амш кто** __[описание]__ — выбрать случайного участника\n"
                             "• **/config** — настроить бота\n"
                             "• **/help** — эта помощь\n\n"
                             "||по всем вопросам, замечаниям и предложениям — @sqkrv||", parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
 
+    async def d20(self, _, message: types.Message):
+        await message.reply(f"У Вас выпало **{str(random.randint(1, 20))}**", quote=True, parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+
+    async def whos_today(self, _, message: types.Message):
+        random_member = random.choice([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)])
+        if len(message.command) > 2:
+            await message.reply(f"{random_member.mention} {' '.join(message.command[2])}")
+        else:
+            await message.reply(f"-> {random_member.mention} <-")
+
     def run(self):
-        self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
-        self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
-        self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
-        self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
-        self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
-        self.bot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
-        self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
-        self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
-        self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
-        print("Starting bot...")
-        self.bot.run()
+        async def run():
+            self.bot = pyrogram.Client(self.name, self.api_id, self.api_hash, bot_token=self.bot_token)
+            self.selfbot = pyrogram.Client(self.name + "_selfbot", self.api_id, self.api_hash)
+            self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
+            self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
+            self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
+            self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
+            self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
+            self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
+            self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
+            self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
+            self.bot.add_handler(MessageHandler(self.d20, amsh_command("d20")))
+            self.bot.add_handler(MessageHandler(self.whos_today, amsh_command("кто")))
+            self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
+            # self.bot.add_handler(MessageHandler(lambda _, msg: print(msg.chat.id)))
+            # self.selfbot.add_handler(MessageHandler(lambda _, msg: print(msg), filters.chat(CHAT_ID)))
+            print("Starting bot(s)...")
+            # self.bot.run()
+            # self.selfbot.run()
+
+            await pyrogram.compose([self.bot, self.selfbot])
+
+        asyncio.run(run())
 
 # bot.run()

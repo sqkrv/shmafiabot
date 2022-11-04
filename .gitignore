@@ -1,6 +1,7 @@
 /shmafiabot.session
 /shmafiabot.session-journal
 /shmafiabot.db
-/shmafiabot.old.db
 /.env
 /.idea
+/shmafiabot_selfbot.session
+/shmafiabot_selfbot.session-journal
