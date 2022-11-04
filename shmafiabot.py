@@ -14,7 +14,7 @@ from db import User, GroupAffiliation, RestrictedUser, Config
 
 # bot = Client('shmafiabot', os.getenv('API_ID'), os.getenv('API_HASH'), bot_token=os.getenv('BOT_TOKEN'))
 
-CHAT_ID = os.getenv('CHAT_ID')
+CHAT_ID = int(os.getenv('CHAT_ID'))
 
 
 def text_command(strings: Union[str, List[str]]):
