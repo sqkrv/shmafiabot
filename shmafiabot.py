@@ -275,7 +275,7 @@ class ShmafiaBot:
     def run(self):
         self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
         self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
-        self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all"])))
+        self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
         self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
         self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
         self.bot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
