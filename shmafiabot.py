@@ -182,7 +182,7 @@ class ShmafiaBot:
                 #                 [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
                 text_part = "отметить общажников"
             case PingGroup.ALL | _:
-                mentions = [member.user.mention async for member in chat.get_members() if not member.user.username.lower().endswith('bot')]
+                mentions = [member.user.mention async for member in chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)]
                 text_part = "всех отметить"
 
         ping_message = ' '.join(message.command[1:]) if len(message.command) > 1 else None
