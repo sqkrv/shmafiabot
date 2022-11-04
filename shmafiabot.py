@@ -1,5 +1,6 @@
 import asyncio
 import enum
+import os
 import random
 import re
 from typing import Union, List
@@ -13,7 +14,7 @@ from db import User, GroupAffiliation, RestrictedUser, Config
 
 # bot = Client('shmafiabot', os.getenv('API_ID'), os.getenv('API_HASH'), bot_token=os.getenv('BOT_TOKEN'))
 
-CHAT_ID = -1001129909206  # shmafia -1001614109246
+CHAT_ID = os.getenv('CHAT_ID')
 
 
 def text_command(strings: Union[str, List[str]]):
