@@ -173,8 +173,10 @@ class ShmafiaBot:
                 for user_id in [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]:
                     try:
                         mentions.append(await self.bot.get_users(user_id))
-                    except KeyError | pyrogram.errors.exceptions.bad_request_400.PeerIdInvalid:
-                        pass
+                    except KeyError as e:
+                        print('keyerror' + str(e))
+                    except pyrogram.errors.exceptions.bad_request_400.PeerIdInvalid:
+                        print("peerinvalid")
                 # mentions = [user.mention for user in
                 #             (await self.bot.get_users(
                 #                 [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
