@@ -168,9 +168,15 @@ class ShmafiaBot:
         chat = message.chat
         match group:
             case PingGroup.DORM:
-                mentions = [user.mention for user in
-                            (await self.bot.get_users(
-                                [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
+                mentions = []
+                for user_id in [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]:
+                    try:
+                        mentions.append(await self.bot.get_users(user_id))
+                    except KeyError:
+                        pass
+                # mentions = [user.mention for user in
+                #             (await self.bot.get_users(
+                #                 [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
                 text_part = "отметить общажников"
             case PingGroup.ALL | _:
                 mentions = [member.user.mention async for member in chat.get_members() if not member.user.username.lower().endswith('bot')]
