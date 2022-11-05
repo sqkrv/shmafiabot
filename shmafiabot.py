@@ -4,16 +4,17 @@ import os
 import random
 import re
 from typing import Union, List
+from datetime import datetime
 
 import peewee
 import pyrogram
 from pyrogram import filters, types
 from pyrogram.handlers import MessageHandler
+from pyrogram.enums import ParseMode
 
 from db import User, GroupAffiliation, RestrictedUser, Config
 
 CHAT_ID = int(os.getenv('CHAT_ID'))
-
 
 def text_command(strings: Union[str, List[str]]):
     return chat_command(strings, prefix='')
@@ -74,6 +75,8 @@ class ShmafiaBot:
             ConfigKey.ANTI_FISHING: Config.get(Config.key == ConfigKey.ANTI_FISHING),
             ConfigKey.ANTI_PIPISA_ADS: Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS),
         }
+        self.current_antipair = None
+        self.ANTIPAIR_TIMEDELTA = 6
 
     async def _set_title(self, message, chat, author, title):
         for _ in range(2):
@@ -286,12 +289,13 @@ class ShmafiaBot:
                             "• **шар** __<вопрос>__ — спросить мнение у шара\n"
                             "• **амш d20** — кинуть d20\n"
                             "• **амш кто** __[описание]__ — выбрать случайного участника\n"
+                            "• **амш антипара дня** — выбрать антипару дня\n"
                             "• **/config** — настроить бота\n"
                             "• **/help** — эта помощь\n\n"
-                            "||по всем вопросам, замечаниям и предложениям — @sqkrv||", parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+                            "||по всем вопросам, замечаниям и предложениям — @sqkrv||", parse_mode=ParseMode.MARKDOWN)
 
     async def d20(self, _, message: types.Message):
-        await message.reply(f"У Вас выпало **{str(random.randint(1, 20))}**", quote=True, parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+        await message.reply(f"{random.choice(['У Вас выпало', 'На ребре', 'Выпало', 'Вы открыли глаза. На ребре'])} **{str(random.randint(1, 20))}**", quote=True, parse_mode=ParseMode.MARKDOWN)
 
     async def whos_today(self, _, message: types.Message):
         random_member = random.choice([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)])
@@ -299,6 +303,15 @@ class ShmafiaBot:
             await message.reply(f"{random_member.mention} {' '.join(message.command[2])}")
         else:
             await message.reply(f"-> {random_member.mention} <-")
+
+    async def antipair(self, _, message: types.Message):
+        antipair_code = str(datetime.today().day) + str(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1)
+        if antipair_code != self.current_antipair[0]:
+            random_members = random.choices([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)], k=2)
+            self.current_antipair = (antipair_code, tuple(random_members))
+        await message.reply("**АнтиПара дня**\n\n"
+                            f"💔 {self.current_antipair[1][0]} + {self.current_antipair[1][0]} 💔\n\n"
+                            f"Следующую пару можно будет выбрать в **{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00** по МСК", parse_mode=ParseMode.MARKDOWN)
 
     def run(self):
         async def run():
@@ -315,6 +328,7 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(self.d20, amsh_command("d20")))
             self.bot.add_handler(MessageHandler(self.whos_today, amsh_command("кто")))
             self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
+            self.bot.add_handler(MessageHandler(self.antipair, amsh_command("антипара дня")))
             # self.bot.add_handler(MessageHandler(lambda _, msg: print(msg.chat.id)))
             # self.selfbot.add_handler(MessageHandler(lambda _, msg: print(msg), filters.chat(CHAT_ID)))
             print("Starting bot(s)...")
