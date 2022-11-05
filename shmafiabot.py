@@ -306,12 +306,12 @@ class ShmafiaBot:
 
     async def antipair(self, _, message: types.Message):
         antipair_code = str(datetime.today().day) + str(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1)
-        if antipair_code != self.current_antipair[0]:
-            random_members = random.choices([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)], k=2)
+        if not self.current_antipair or antipair_code != self.current_antipair[0]:
+            random_members = random.sample([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)], 2)
             self.current_antipair = (antipair_code, tuple(random_members))
-        await message.reply("**АнтиПара дня**\n\n"
-                            f"💔 {self.current_antipair[1][0]} + {self.current_antipair[1][0]} 💔\n\n"
-                            f"Следующую пару можно будет выбрать в **{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00** по МСК", parse_mode=ParseMode.MARKDOWN)
+        await message.reply("<b>АнтиПара дня</b>\n\n"
+                            f"💔 {self.current_antipair[1][0].user.mention} + {self.current_antipair[1][1].user.mention} 💔\n\n"
+                            f"Следующую пару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК", parse_mode=ParseMode.HTML)
 
     def run(self):
         async def run():
