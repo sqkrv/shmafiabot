@@ -3,18 +3,19 @@ import enum
 import os
 import random
 import re
-from typing import Union, List
 from datetime import datetime
+from typing import Union, List
 
 import peewee
 import pyrogram
 from pyrogram import filters, types
-from pyrogram.handlers import MessageHandler
 from pyrogram.enums import ParseMode
+from pyrogram.handlers import MessageHandler
 
 from db import User, GroupAffiliation, RestrictedUser, Config
 
 CHAT_ID = int(os.getenv('CHAT_ID'))
+
 
 def text_command(strings: Union[str, List[str]]):
     return chat_command(strings, prefix='')
@@ -28,7 +29,7 @@ def chat_command(commands: Union[str, List[str]], prefix: Union[str, List[str]] 
 
 
 def amsh_command(strings: Union[str, List[str]]):
-    return chat_command(strings, prefix='амш ')
+    return chat_command(strings, prefix=['амш ', 'Амш ', 'ашм ', 'Ашм '])
 
 
 def admin_command(commands: Union[str, List[str]]):
@@ -46,7 +47,7 @@ class ConfigKey:
 
 
 async def promote_member(chat, author):
-    await chat.promote_member(
+    return await chat.promote_member(
         user_id=author.id,
         privileges=types.ChatPrivileges(
             can_manage_chat=False,
@@ -299,10 +300,10 @@ class ShmafiaBot:
 
     async def whos_today(self, _, message: types.Message):
         random_member = random.choice([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)])
-        if len(message.command) > 2:
-            await message.reply(f"{random_member.mention} {' '.join(message.command[2])}")
+        if len(message.command) > 1:  # because the first element is 'амш кто'
+            await message.reply(f"{random_member.user.mention} {' '.join(message.command[2:])}")
         else:
-            await message.reply(f"-> {random_member.mention} <-")
+            await message.reply(f"-> {random_member.user.mention} <-")
 
     async def antipair(self, _, message: types.Message):
         antipair_code = str(datetime.today().day) + str(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1)
@@ -311,7 +312,7 @@ class ShmafiaBot:
             self.current_antipair = (antipair_code, tuple(random_members))
         await message.reply("<b>АнтиПара дня</b>\n\n"
                             f"💔 {self.current_antipair[1][0].user.mention} + {self.current_antipair[1][1].user.mention} 💔\n\n"
-                            f"Следующую пару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК", parse_mode=ParseMode.HTML)
+                            f"Следующую антипару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК", parse_mode=ParseMode.HTML)
 
     def run(self):
         async def run():
