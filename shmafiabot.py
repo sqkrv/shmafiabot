@@ -33,7 +33,7 @@ def amsh_command(strings: Union[str, List[str]]):
 
 
 def admin_command(commands: Union[str, List[str]]):
-    return chat_command(commands) & filters.user([356786682, 633834276, 209007669])  # яся, Марьям, дед
+    return chat_command(commands) & filters.user([356786682, 633834276, 209007669, 55539711])  # яся, Марьям, дед
 
 
 class PingGroup(enum.Enum):
@@ -144,7 +144,7 @@ class ShmafiaBot:
         """
         if entities := message.entities:
             if len(entities) < 2:
-                await message.reply("No arguments provided", quote=True)
+                await message.reply("Пользователь не указан", quote=True)
                 return
 
             to_restrict = False if message.command[0].startswith('un') else True
@@ -152,16 +152,17 @@ class ShmafiaBot:
             chat = message.chat
             member = None
 
-            if entity.type == 'mention':
+            if entity.type == pyrogram.enums.MessageEntityType.MENTION:
                 offset = entity.offset
                 member = message.text[offset:offset + entity.length]
                 try:
                     member = await chat.get_member(member)
                 except pyrogram.errors.exceptions.bad_request_400.UserNotParticipant:
-                    await message.reply("Specified user is not a member of this chat.")
+                    await message.reply("Указанный пользователь не является участником чата.")
                     return
-                member = member.user
-            elif entity.type == 'text_mention':
+                else:
+                    member = member.user
+            elif entity.type == pyrogram.enums.MessageEntityType.TEXT_MENTION:
                 member = entity.user
 
             if member:
@@ -326,7 +327,7 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
             self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
             self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
-            self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
+            self.bot.add_handler(MessageHandler(self.ping_dorm, text_command(["@общажники", "@общага"])))
             self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
             self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
             self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
