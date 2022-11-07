@@ -12,7 +12,7 @@ from pyrogram import filters, types
 from pyrogram.enums import ParseMode
 from pyrogram.handlers import MessageHandler
 
-from db import User, GroupAffiliation, RestrictedUser, Config
+from db import GroupAffiliation, RestrictedUser, Config
 
 CHAT_ID = int(os.getenv('CHAT_ID'))
 
@@ -181,23 +181,13 @@ class ShmafiaBot:
 
     async def ping_func(self, message: types.Message, group: PingGroup):
         chat = message.chat
+        all_members = [member async for member in chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)]
         match group:
             case PingGroup.DORM:
-                mentions = []
-                for user_id in [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]:
-                    try:
-                        mentions.append(await self.bot.get_users(user_id))
-                    except KeyError as e:
-                        print('keyerror' + str(e))
-                    except pyrogram.errors.exceptions.bad_request_400.PeerIdInvalid:
-                        print("peerinvalid")
-                mentions = [user.mention for user in mentions]
-                # mentions = [user.mention for user in
-                #             (await self.bot.get_users(
-                #                 [_.user_id_id for _ in GroupAffiliation.select(GroupAffiliation.user_id_id).join(User).where(GroupAffiliation.mention_group_id == 1 & User.member)]))]
+                mentions = [member.user.mention for member in all_members if GroupAffiliation.get_or_none(GroupAffiliation.user_id == member.user.id)]
                 text_part = "отметить общажников"
             case PingGroup.ALL | _:
-                mentions = [member.user.mention async for member in chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)]
+                mentions = [member.user.mention for member in all_members]
                 text_part = "всех отметить"
 
         ping_message = ' '.join(message.command[1:]) if len(message.command) > 1 else None
@@ -233,7 +223,7 @@ class ShmafiaBot:
 
     # @bot.on_message(filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID))
     async def fishing_msg_deletion(self, _, message: types.Message):
-        if not self.config['anti_fishing']:
+        if not self.config[ConfigKey.ANTI_FISHING]:
             return
 
         message._client = self.bot
@@ -249,11 +239,14 @@ class ShmafiaBot:
             text = f"нет энергии"
 
         await message.reply(text)
-        # await asyncio.sleep(1)
         await message.delete()
 
     # @bot.on_message(filters.media & filters.user(1264548383) & filters.chat(CHAT_ID))
     async def pipisa_bot_ad_remover(self, _, message: types.Message):
+        if not self.config[ConfigKey.ANTI_PIPISA_ADS]:
+            return
+
+        message._client = self.bot
         await message.delete()
         await message.reply("тут была реклама @pipisabot, а может быть Ваша")
 
@@ -300,8 +293,8 @@ class ShmafiaBot:
 
     async def whos_today(self, _, message: types.Message):
         random_member = random.choice([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)])
-        if len(message.command) > 1:  # because the first element is 'амш кто'
-            await message.reply(f"{random_member.user.mention} {' '.join(message.command[2:])}")
+        if len(message.command) > 2:  # because the first (0) element is 'амш кто'
+            await message.reply(f"{random_member.user.mention} {' '.join(message.command[1:])}")
         else:
             await message.reply(f"-> {random_member.user.mention} <-")
 
@@ -310,9 +303,21 @@ class ShmafiaBot:
         if not self.current_antipair or antipair_code != self.current_antipair[0]:
             random_members = random.sample([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)], 2)
             self.current_antipair = (antipair_code, tuple(random_members))
+        antipair_strings = [
+            "💔 {.[0].user.mention} + {.[1].user.mention} 💔",
+            "{.[0].user.mention} + {.[1].user.mention} += 💔",
+        ]
+        antipair_comments = [
+            f"Следующую антипару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК",
+            "Не стоит вам встречаться",
+            "Не водитесь вместе",
+            "Будет интересно, если вы уже пара",
+            "А пара дня какая?",
+            "Чем же вы так не угодили друг другу",
+        ]
         await message.reply("<b>АнтиПара дня</b>\n\n"
-                            f"💔 {self.current_antipair[1][0].user.mention} + {self.current_antipair[1][1].user.mention} 💔\n\n"
-                            f"Следующую антипару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК", parse_mode=ParseMode.HTML)
+                            + random.choice(antipair_strings) + '\n\n' +
+                            + random.choice(antipair_comments), parse_mode=ParseMode.HTML)
 
     def run(self):
         async def run():
@@ -323,15 +328,13 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
             self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
             self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
-            self.bot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
             self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
             self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
             self.bot.add_handler(MessageHandler(self.d20, amsh_command("d20")))
             self.bot.add_handler(MessageHandler(self.whos_today, amsh_command("кто")))
-            self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
             self.bot.add_handler(MessageHandler(self.antipair, amsh_command("антипара дня")))
-            # self.bot.add_handler(MessageHandler(lambda _, msg: print(msg.chat.id)))
-            # self.selfbot.add_handler(MessageHandler(lambda _, msg: print(msg), filters.chat(CHAT_ID)))
+            self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
+            self.selfbot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
             print("Starting bot(s)...")
             # self.bot.run()
             # self.selfbot.run()
