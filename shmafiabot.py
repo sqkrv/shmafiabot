@@ -94,14 +94,13 @@ class ShmafiaBot:
                 await message.reply("У Вас плашка длиннее 16 символов или просто неправильная")
                 return False
             except ValueError:
-                result = await chat.promote_member(
+                await chat.promote_member(
                     user_id=author.id,
                     privileges=types.ChatPrivileges(
-                        can_manage_chat=False,
+                        # can_manage_chat=False,
                         # can_invite_users=False
                     )
                 )
-                print(repr(result))
 
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
     async def set_title_command(self, _, message: types.Message):
