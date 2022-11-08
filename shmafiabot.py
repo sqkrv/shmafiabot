@@ -33,7 +33,7 @@ def amsh_command(strings: Union[str, List[str]]):
 
 
 def admin_command(commands: Union[str, List[str]]):
-    return chat_command(commands) & filters.user([356786682, 633834276, 209007669])  # яся, Марьям, дед
+    return chat_command(commands) & filters.user([356786682, 633834276, 209007669, 55539711])  # яся, Марьям, дед
 
 
 class PingGroup(enum.Enum):
@@ -46,15 +46,8 @@ class ConfigKey:
     ANTI_PIPISA_ADS = 'anti_pipisa_ads'
 
 
-async def promote_member(chat, author):
-    return await chat.promote_member(
-        user_id=author.id,
-        privileges=types.ChatPrivileges(
-            can_manage_chat=False,
-            # can_invite_users=False
-        )
-    )
-
+class CrocodileGame:
+    has_started = None
 
 class ShmafiaBot:
     def __init__(
@@ -101,7 +94,14 @@ class ShmafiaBot:
                 await message.reply("У Вас плашка длиннее 16 символов или просто неправильная")
                 return False
             except ValueError:
-                await promote_member(chat, author)
+                result = await chat.promote_member(
+                    user_id=author.id,
+                    privileges=types.ChatPrivileges(
+                        can_manage_chat=False,
+                        # can_invite_users=False
+                    )
+                )
+                print(repr(result))
 
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
     async def set_title_command(self, _, message: types.Message):
@@ -129,7 +129,7 @@ class ShmafiaBot:
         if result := await self._set_title(message, chat, author, title):
             await message.reply(f"Ваша плашка была успешно изменена на `{title}`.")
         elif result is False:
-            pass
+            print('idk')
         else:
             print(result)
             await message.reply(f"Что-то пошло не так, попробуйте снова")
@@ -144,7 +144,7 @@ class ShmafiaBot:
         """
         if entities := message.entities:
             if len(entities) < 2:
-                await message.reply("No arguments provided", quote=True)
+                await message.reply("Пользователь не указан", quote=True)
                 return
 
             to_restrict = False if message.command[0].startswith('un') else True
@@ -152,16 +152,17 @@ class ShmafiaBot:
             chat = message.chat
             member = None
 
-            if entity.type == 'mention':
+            if entity.type == pyrogram.enums.MessageEntityType.MENTION:
                 offset = entity.offset
                 member = message.text[offset:offset + entity.length]
                 try:
                     member = await chat.get_member(member)
                 except pyrogram.errors.exceptions.bad_request_400.UserNotParticipant:
-                    await message.reply("Specified user is not a member of this chat.")
+                    await message.reply("Указанный пользователь не является участником чата.")
                     return
-                member = member.user
-            elif entity.type == 'text_mention':
+                else:
+                    member = member.user
+            elif entity.type == pyrogram.enums.MessageEntityType.TEXT_MENTION:
                 member = entity.user
 
             if member:
@@ -169,15 +170,15 @@ class ShmafiaBot:
                     try:
                         RestrictedUser.create(user_id=member.id)
                     except peewee.IntegrityError:
-                        await message.reply("Specified member is already restricted.")
+                        await message.reply("Указанный пользователь уже ограничен")
                         return
                 else:
                     if not RestrictedUser.delete().where(RestrictedUser.user_id == member.id).execute():
-                        await message.reply("Specified member is not restricted.")
+                        await message.reply("Указанный пользователь не ограничен")
                         return
-                await message.reply(f"Successfully {'un' if not to_restrict else ''}restricted access to the specified user.")
+                await message.reply("Пользователь успешено был ограничен" if to_restrict else "С пользователя успешно были сняты ограничения")
             else:
-                await message.reply(f"No new users have been {'un' if not to_restrict else ''}restricted.")
+                await message.reply(f"Пользователь не найден")
 
     async def ping_func(self, message: types.Message, group: PingGroup):
         chat = message.chat
@@ -303,11 +304,11 @@ class ShmafiaBot:
         if not self.current_antipair or antipair_code != self.current_antipair[0]:
             random_members = random.sample([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)], 2)
             self.current_antipair = (antipair_code, tuple(random_members))
-        antipair_strings = [
-            "💔 {.[0].user.mention} + {.[1].user.mention} 💔",
-            "{.[0].user.mention} + {.[1].user.mention} += 💔",
+        antipair_strings: List[str] = [
+            "💔 {0[0].user.mention} + {0[1].user.mention} 💔",
+            "{0[0].user.mention} + {0[1].user.mention} += 💔",
         ]
-        antipair_comments = [
+        antipair_comments: List[str] = [
             f"Следующую антипару можно будет выбрать в <b>{(datetime.now().hour // self.ANTIPAIR_TIMEDELTA + 1) * self.ANTIPAIR_TIMEDELTA}:00</b> по МСК",
             "Не стоит вам встречаться",
             "Не водитесь вместе",
@@ -315,9 +316,12 @@ class ShmafiaBot:
             "А пара дня какая?",
             "Чем же вы так не угодили друг другу",
         ]
-        await message.reply("<b>АнтиПара дня</b>\n\n"
-                            + random.choice(antipair_strings) + '\n\n' +
-                            + random.choice(antipair_comments), parse_mode=ParseMode.HTML)
+        await message.reply("<b>АнтиПара дня</b>\n\n" +
+                            random.choice(antipair_strings).format(self.current_antipair[1]) + '\n\n' +
+                            random.choice(antipair_comments), parse_mode=ParseMode.HTML)
+
+    async def crocodile_start(self, _, message: types.Message):
+        pass
 
     def run(self):
         async def run():
@@ -326,7 +330,7 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(self.set_title_command, chat_command(["set_nametag", "change_nametag"])))
             self.bot.add_handler(MessageHandler(self.un_restrict_member_command, admin_command(["restrict_member", "unrestrict_member"])))
             self.bot.add_handler(MessageHandler(self.ping_all, text_command(["@все", "@all", "@типавсе"])))
-            self.bot.add_handler(MessageHandler(self.ping_dorm, text_command("@общажники")))
+            self.bot.add_handler(MessageHandler(self.ping_dorm, text_command(["@общажники", "@общага"])))
             self.bot.add_handler(MessageHandler(self.a8ball, text_command("шар")))
             self.bot.add_handler(MessageHandler(self.config_command, chat_command("config")))
             self.bot.add_handler(MessageHandler(self.help_command, filters.command("help")))
