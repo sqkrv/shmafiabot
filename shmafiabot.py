@@ -13,6 +13,7 @@ from pyrogram.enums import ParseMode
 from pyrogram.handlers import MessageHandler
 
 from db import GroupAffiliation, RestrictedUser, Config
+from crocodile_words import Words
 
 CHAT_ID = int(os.getenv('CHAT_ID'))
 
@@ -47,7 +48,17 @@ class ConfigKey:
 
 
 class CrocodileGame:
-    has_started = None
+    def __init__(self):
+        self.WORDS = Words()
+        self.word = self.pick_word()
+        self.recent_words = []
+        self.pick_word()
+
+    def pick_word(self):
+        self.word = random.choice([word for word in self.WORDS.ALL if word not in self.recent_words])
+        self.recent_words.append(self.word)
+        return self.word
+
 
 class ShmafiaBot:
     def __init__(
@@ -71,6 +82,7 @@ class ShmafiaBot:
         }
         self.current_antipair = None
         self.ANTIPAIR_TIMEDELTA = 6
+        self.crocodile_game = None
 
     async def _set_title(self, message, chat, author, title):
         for _ in range(2):
@@ -320,7 +332,20 @@ class ShmafiaBot:
                             random.choice(antipair_comments), parse_mode=ParseMode.HTML)
 
     async def crocodile_start(self, _, message: types.Message):
+        if self.crocodile_game is None:
+            await message.reply("Игра уже идет, присоединяйся!")
+            return
+        self.crocodile_game = CrocodileGame()
+        await message.reply(f"Слово: {self.crocodile_game.word}")
+
+    async def crocodile_next(self):
         pass
+
+    async def all_messages_listener(self, _, message: types.Message):
+        print(message.from_user.first_name, message.text)
+        if self.crocodile_game:
+            if message.text.lower() == self.crocodile_game.word.lower():
+                await self.crocodile_next()
 
     def run(self):
         async def run():
