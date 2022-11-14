@@ -59,7 +59,7 @@ class ConfigKey:
 
 class CrocodileGame:
     BECOME_PRESENTER_TIMEOUT = 7
-    BECOME_PRESENTER_END_GAME_TIMEOUT = 30
+    BECOME_PRESENTER_END_GAME_TIMEOUT = 60
 
     class CallbackQueries:
         SHOW_WORD = "show_word"
@@ -91,17 +91,17 @@ class ShmafiaBot:
         self.api_id: int | str = api_id
         self.api_hash: str = api_hash
         self.bot_token: str = bot_token
-        self.bot: pyrogram.Client = None
-        self.selfbot: pyrogram.Client = None
+        self.bot: Optional[pyrogram.Client] = None
+        self.selfbot: Optional[pyrogram.Client] = None
         # self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
         # self.selfbot = pyrogram.Client(name+"_selfbot", api_id, api_hash)
         self.config: Dict[ConfigKey: bool] = {
             ConfigKey.ANTI_FISHING: bool(int(Config.get(Config.key == ConfigKey.ANTI_FISHING).value)),
             ConfigKey.ANTI_PIPISA_ADS: bool(int(Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS).value)),
         }
-        self.current_antipair: Tuple[str, Tuple[types.ChatMember, types.ChatMember]] = None
+        self.current_antipair: Optional[Tuple[str, Tuple[types.ChatMember, types.ChatMember]]] = None
         self.ANTIPAIR_TIMEDELTA: int = 6
-        self.crocodile_game: CrocodileGame = None
+        self.crocodile_game: Optional[CrocodileGame] = None
 
     async def _set_title(self, message, chat, author, title):
         for _ in range(2):
@@ -136,7 +136,7 @@ class ShmafiaBot:
     async def _random_members(self, chat: types.Chat, n: int = 1, exclude_ids: List[int] = None) -> Union[types.ChatMember, List[types.ChatMember]]:
         exclude_ids = exclude_ids or []
         members = [member async for member in chat.get_members() if
-                   not member.user.username.lower().endswith('bot') and member.user.id not in exclude_ids]
+                   (not member.user.username) or (member.user.username.lower().endswith('bot') and member.user.id not in exclude_ids)]
         return random.choice(members) if n == 1 else random.sample(members, n)
 
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
@@ -441,7 +441,6 @@ class ShmafiaBot:
     # endregion
 
     async def all_messages_listener(self, _, message: types.Message):
-        print(message.from_user.first_name, message.text)
         author = message.from_user
         if self.crocodile_game:
             if not message.text:
