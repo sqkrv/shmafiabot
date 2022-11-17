@@ -136,7 +136,7 @@ class ShmafiaBot:
     async def _random_members(self, chat: types.Chat, n: int = 1, exclude_ids: List[int] = None) -> Union[types.ChatMember, List[types.ChatMember]]:
         exclude_ids = exclude_ids or []
         members = [member async for member in chat.get_members() if
-                   (not member.user.username) or (member.user.username.lower().endswith('bot') and member.user.id not in exclude_ids)]
+                   (not member.user.username) or (not member.user.username.lower().endswith('bot') and member.user.id not in exclude_ids)]
         return random.choice(members) if n == 1 else random.sample(members, n)
 
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
@@ -438,27 +438,27 @@ class ShmafiaBot:
 
         self.crocodile_game = None
         await message.reply("Крокодил закончен")
-    # endregion
 
-    async def all_messages_listener(self, _, message: types.Message):
+    async def crocodile_messages_listener(self, _, message: types.Message):
         author = message.from_user
-        if self.crocodile_game:
-            if not message.text:
+        await message.reply(
+            f"{author.mention} отгадал(а) слово",
+            reply_markup=pyrogram.types.InlineKeyboardMarkup([[pyrogram.types.InlineKeyboardButton(text="Принять эстафету", callback_data="become_presenter")]])
+        )
+        self.crocodile_game.pick_word()
+        self.crocodile_game.presenter = None
+        self.crocodile_game.reserved_presenter = author
+        _start_time = time.time()
+        while not self.crocodile_game.presenter:
+            _passed = time.time() - _start_time
+            if _passed > CrocodileGame.BECOME_PRESENTER_END_GAME_TIMEOUT:
+                self.crocodile_game = None
+                await message.reply("Крокодил закончен")
                 return
-            if message.text.lower() == self.crocodile_game.word.lower() and message.from_user.id != self.crocodile_game.presenter.id:
-                await message.reply(
-                    f"{author.mention} отгадал(а) слово",
-                    reply_markup=pyrogram.types.InlineKeyboardMarkup([[pyrogram.types.InlineKeyboardButton(text="Принять эстафету", callback_data="become_presenter")]])
-                )
-                self.crocodile_game.pick_word()
-                self.crocodile_game.presenter = None
-                self.crocodile_game.reserved_presenter = author
-                await asyncio.sleep(CrocodileGame.BECOME_PRESENTER_TIMEOUT)
+            elif _passed > CrocodileGame.BECOME_PRESENTER_TIMEOUT:
                 self.crocodile_game.reserved_presenter = None
-                await asyncio.sleep(CrocodileGame.BECOME_PRESENTER_END_GAME_TIMEOUT)
-                if self.crocodile_game.presenter is None:
-                    self.crocodile_game = None
-                    await message.reply("Крокодил закончен")
+            await asyncio.sleep(0.8)
+    # endregion
 
     def run(self):
         async def run():
@@ -480,13 +480,29 @@ class ShmafiaBot:
             self.bot.add_handler(CallbackQueryHandler(self.crocodile_repick_word, filters.regex(CrocodileGame.CallbackQueries.NEXT_WORD)))
             self.bot.add_handler(CallbackQueryHandler(self.crocodile_become_presenter, filters.regex(CrocodileGame.CallbackQueries.BECOME_PRESENTER)))
             self.bot.add_handler(MessageHandler(self.crocodile_end_game, chat_command(["end_crocodile", "stop_crocodile"])))
+            self.bot.add_handler(MessageHandler(
+                self.crocodile_messages_listener,
+                filters.create(lambda _, __, m:
+                               self.crocodile_game is not None and filters.text and m.text.lower() == self.crocodile_game.word.lower() and m.from_user.id != self.crocodile_game.presenter.id))
+            )  # crocodile text messages listener
             # endregion
-            self.bot.add_handler(MessageHandler(self.all_messages_listener))  # all messages listener
+
+            # self.bot.add_handler(MessageHandler(self.send_during_mafia_messages, chat_command("send_mafia_messages")), group=3)
+            # # mafia message - must be the last line
+            # self.bot.add_handler(MessageHandler(
+            #     self.during_mafia_messages,
+            #     filters.create(lambda _, __, m: self.mafia_game_in_progress and (filters.video_note or filters.text or filters.voice) and not any([_ for _ in ["help", "send_mafia_messages"] if _ in m.text]))
+            # ), group=1)
+
+            # selfbot events
             self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
             self.selfbot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
             print("Starting bot(s)...")
             # self.bot.run()
             # self.selfbot.run()
+
+            # TODO сохранить все сообщения отправленные и удаленные во время игры в мафию и отправить их потом
+            # TODO усиленный режим анти-рыбалки: если сообщения идут подряд и конечное сообщение с нулевой энергией, то удалить весь тред ссообщений
 
             await pyrogram.compose([self.bot, self.selfbot])
 
