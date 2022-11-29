@@ -5,6 +5,7 @@ import random
 import re
 from datetime import datetime
 from typing import Union, List, Tuple, Dict, Optional
+import time
 
 import peewee
 import pyrogram
@@ -460,6 +461,17 @@ class ShmafiaBot:
             await asyncio.sleep(0.8)
     # endregion
 
+    async def when_photos(self, _, message: types.Message):
+        await message.reply(random.choice([
+            "нахуй иди (за мат извини)", "обещанного три года ждут", "обещанного три года ждут",
+            "обещанного три года ждут, а на четвертый забывают", "в работе",
+            "совсем скоро", "ебать, с первым посвятом было проще, никто так не просил, как вы",
+            "блин, там короче это, ну в общем скоро", "soon™", "фотки? какие фотки?", "бог терпел и вам велел",
+            "Не под дождем — подождем", "Не жди победы, а добивайся", "Все приходит вовремя для того, кто умеет ждать",
+            "сейчас чай допью и будут", "за каждый такой вопрос я удаляю одну фотку с альбома",
+            "иди нахуй (за мат извини)", "██████▓░░░ 69% done", "ඞ", "да, я тратил время на это, а мог бы фотки разбирать"
+        ]))
+
     def run(self):
         async def run():
             self.bot = pyrogram.Client(self.name, self.api_id, self.api_hash, bot_token=self.bot_token)
@@ -474,6 +486,7 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(self.d20, amsh_command("d20")))
             self.bot.add_handler(MessageHandler(self.whos_today, amsh_command("кто")))
             self.bot.add_handler(MessageHandler(self.antipair, amsh_command("антипара дня")))
+            self.bot.add_handler(MessageHandler(self.when_photos, filters.regex(r"когда фотки|фотки когда", re.IGNORECASE) & filters.chat(CHAT_ID)))
             # region Crocodile game
             self.bot.add_handler(MessageHandler(self.crocodile_start, chat_command("start_crocodile")))
             self.bot.add_handler(CallbackQueryHandler(self.crocodile_show_word, filters.regex(CrocodileGame.CallbackQueries.SHOW_WORD)))
