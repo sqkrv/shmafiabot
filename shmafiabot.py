@@ -1,8 +1,10 @@
 import asyncio
 import enum
+import io
 import os
 import random
 import re
+import time
 from datetime import datetime
 from typing import Union, List, Tuple, Dict, Optional
 
@@ -10,7 +12,7 @@ import peewee
 import pyrogram
 from pyrogram import filters, types
 from pyrogram.enums import ParseMode
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler, DeletedMessagesHandler
 
 from crocodile_words import Words
 from db import GroupAffiliation, RestrictedUser, Config
@@ -55,6 +57,7 @@ class PingGroup(enum.Enum):
 class ConfigKey:
     ANTI_FISHING = 'anti_fishing'
     ANTI_PIPISA_ADS = 'anti_pipisa_ads'
+    MAFIA_MESSAGES_RECOVERY = 'mafia_messages_recovery'
 
 
 class CrocodileGame:
@@ -98,10 +101,13 @@ class ShmafiaBot:
         self.config: Dict[ConfigKey: bool] = {
             ConfigKey.ANTI_FISHING: bool(int(Config.get(Config.key == ConfigKey.ANTI_FISHING).value)),
             ConfigKey.ANTI_PIPISA_ADS: bool(int(Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS).value)),
+            ConfigKey.MAFIA_MESSAGES_RECOVERY: bool(int(Config.get(Config.key == ConfigKey.MAFIA_MESSAGES_RECOVERY).value)),
         }
         self.current_antipair: Optional[Tuple[str, Tuple[types.ChatMember, types.ChatMember]]] = None
         self.ANTIPAIR_TIMEDELTA: int = 6
         self.crocodile_game: Optional[CrocodileGame] = None
+        self.mafia_messages: Dict[types.Message: List[io.BytesIO]] = {}
+        self.mafia_game_in_progress: bool = False
 
     async def _set_title(self, message, chat, author, title):
         for _ in range(2):
@@ -298,7 +304,8 @@ class ShmafiaBot:
         if len(message.command) < 2:
             await message.reply("Не указаны параметры. Параметры для изменения:\n"
                                 f"• {ConfigKey.ANTI_FISHING} — режим анти-рыбалки\n"
-                                f"• {ConfigKey.ANTI_PIPISA_ADS} — режим анти-рекламы пиписы", quote=True)
+                                f"• {ConfigKey.ANTI_PIPISA_ADS} — режим анти-рекламы пиписы"
+                                f"• {ConfigKey.MAFIA_MESSAGES_RECOVERY} — режим сохранения удаленных в мафии сообщений\n", quote=True)
             return
 
         match message.command[1]:
@@ -309,6 +316,13 @@ class ShmafiaBot:
             case ConfigKey.ANTI_PIPISA_ADS:
                 state = self.toggle_config_variable(ConfigKey.ANTI_PIPISA_ADS)
                 await message.reply(f"Режим анти-рекламы пиписы {'включен' if state else 'отключен'}")
+                return
+            case ConfigKey.MAFIA_MESSAGES_RECOVERY:
+                if self.mafia_game_in_progress:
+                    await message.reply("Вы не можете изменить данный параметр во время игры")
+                    return
+                state = self.toggle_config_variable(ConfigKey.MAFIA_MESSAGES_RECOVERY)
+                await message.reply(f"Режим сохранения удаленных в мафии сообщений {'включен' if state else 'отключен'}")
                 return
             case _:
                 pass
@@ -333,7 +347,7 @@ class ShmafiaBot:
     async def whos_today(self, _, message: types.Message):
         # random_member = random.choice([member async for member in message.chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)])
         random_member = await self._random_members(message.chat)
-        if len(message.command) > 2:  # because the first (0) element is 'амш кто'
+        if len(message.command) > 1:  # because the first (0) element is 'амш кто'
             await message.reply(f"{random_member.user.mention} {' '.join(message.command[1:])}")
         else:
             await message.reply(f"-> {random_member.user.mention} <-")
@@ -458,7 +472,37 @@ class ShmafiaBot:
             elif _passed > CrocodileGame.BECOME_PRESENTER_TIMEOUT:
                 self.crocodile_game.reserved_presenter = None
             await asyncio.sleep(0.8)
+
     # endregion
+
+    async def during_mafia_messages(self, _, message: types.Message):
+        await message.delete()
+        if message.media:
+            download: io.BytesIO = await message.download(in_memory=True)
+            await self.bot.send_video_note(CHAT_ID, download)
+        self.mafia_messages[message] = []
+
+    async def during_mafia_messages_deleted(self, _, messages: List[types.Message]):
+        print(messages)
+
+    async def send_during_mafia_messages(self, _, message: types.Message):
+        if not self.mafia_messages:
+            await message.reply("Никаких сообщений не было сохранено")
+            return
+
+        # message.chat.
+
+        for message in self.mafia_messages:
+            await message.forward(chat_id=CHAT_ID)
+        self.mafia_messages.clear()
+
+    async def mafia_game_starts(self, _, messages: types.Message):
+        self.mafia_game_in_progress = True
+        await self.bot.send_message(CHAT_ID, "Запись сообщений во время игры в мафию началась")
+
+    async def mafia_game_ends(self, _, message: types.Message):
+        self.mafia_game_in_progress = False
+        await self.bot.send_message(CHAT_ID, "Для того, чтобы отправить удаленные сообщения во время игры в мафию, отправьте /send_mafia_messages")
 
     def run(self):
         async def run():
@@ -483,26 +527,36 @@ class ShmafiaBot:
             self.bot.add_handler(MessageHandler(
                 self.crocodile_messages_listener,
                 filters.create(lambda _, __, m:
-                               self.crocodile_game is not None and filters.text and m.text.lower() == self.crocodile_game.word.lower() and m.from_user.id != self.crocodile_game.presenter.id))
+                               (self.crocodile_game is not None) and filters.text and m.chat.id == CHAT_ID and m.text.lower() == self.crocodile_game.word.lower() and m.from_user.id != self.crocodile_game.presenter.id))
             )  # crocodile text messages listener
             # endregion
 
-            # self.bot.add_handler(MessageHandler(self.send_during_mafia_messages, chat_command("send_mafia_messages")), group=3)
-            # # mafia message - must be the last line
-            # self.bot.add_handler(MessageHandler(
-            #     self.during_mafia_messages,
-            #     filters.create(lambda _, __, m: self.mafia_game_in_progress and (filters.video_note or filters.text or filters.voice) and not any([_ for _ in ["help", "send_mafia_messages"] if _ in m.text]))
-            # ), group=1)
+            self.bot.add_handler(MessageHandler(self.send_during_mafia_messages, chat_command("send_mafia_messages")), group=3)
+            # mafia message - must be the last line
+            self.bot.add_handler(DeletedMessagesHandler(self.during_mafia_messages_deleted))
+                                                        # filters.create(lambda _, __, ms: self.mafia_game_in_progress and all([_ for _ in ms if ms.chat.id == CHAT_ID]))))
+            self.bot.add_handler(MessageHandler(
+                self.during_mafia_messages,
+                filters.create(
+                    lambda _, __, m: self.mafia_game_in_progress and (filters.video_note or (filters.text and not any([_ for _ in ["help", "send_mafia_messages"] if _ in m.text])) or filters.voice))
+            ), group=1)
 
             # selfbot events
-            self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
-            self.selfbot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
+            self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion,
+                                                    filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID) & self.config[ConfigKey.ANTI_FISHING]))
+            self.selfbot.add_handler(MessageHandler(self.pipisa_bot_ad_remover,
+                                                    (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID) & self.config[ConfigKey.ANTI_PIPISA_ADS]))
+            self.selfbot.add_handler(MessageHandler(self.mafia_game_starts,
+                                                    filters.regex(r"Игра начинается!") & filters.chat(CHAT_ID) & filters.user(468253535) & self.config[ConfigKey.MAFIA_MESSAGES_RECOVERY]))
+            self.selfbot.add_handler(MessageHandler(self.mafia_game_ends,
+                                                    filters.regex(r"Игра окончена!") & filters.chat(CHAT_ID) & filters.user(468253535) & self.config[ConfigKey.MAFIA_MESSAGES_RECOVERY]))
             print("Starting bot(s)...")
             # self.bot.run()
             # self.selfbot.run()
 
             # TODO сохранить все сообщения отправленные и удаленные во время игры в мафию и отправить их потом
             # TODO усиленный режим анти-рыбалки: если сообщения идут подряд и конечное сообщение с нулевой энергией, то удалить весь тред ссообщений
+            # TODO не работает взятие эстафеты другим пользователем
 
             await pyrogram.compose([self.bot, self.selfbot])
 
