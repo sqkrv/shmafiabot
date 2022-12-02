@@ -97,8 +97,8 @@ class ShmafiaBot:
         # self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
         # self.selfbot = pyrogram.Client(name+"_selfbot", api_id, api_hash)
         self.config: Dict[ConfigKey: bool] = {
-            ConfigKey.ANTI_FISHING: bool(int(Config.get(Config.key == ConfigKey.ANTI_FISHING).value)),
-            ConfigKey.ANTI_PIPISA_ADS: bool(int(Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS).value)),
+            ConfigKey.ANTI_FISHING: bool(Config.get(Config.key == ConfigKey.ANTI_FISHING).value),
+            ConfigKey.ANTI_PIPISA_ADS: bool(Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS).value),
         }
         self.current_antipair: Optional[Tuple[str, Tuple[types.ChatMember, types.ChatMember]]] = None
         self.ANTIPAIR_TIMEDELTA: int = 6
