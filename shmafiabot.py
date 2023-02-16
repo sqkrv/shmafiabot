@@ -56,6 +56,7 @@ class PingGroup(enum.Enum):
 class ConfigKey:
     ANTI_FISHING = 'anti_fishing'
     ANTI_PIPISA_ADS = 'anti_pipisa_ads'
+    PIPISA_AD_TEXT_REPLACEMENT = 'pipisa_ad_text_replacement'
 
 
 class CrocodileGame:
@@ -286,7 +287,9 @@ class ShmafiaBot:
 
         message._client = self.bot
         await message.delete()
-        await message.reply("тут была реклама @pipisabot, а может быть Ваша")
+        ad_text_replacement: str = Config.get(Config.key == ConfigKey.PIPISA_AD_TEXT_REPLACEMENT).value
+        ad_text_replacement = ad_text_replacement.strip()
+        await message.reply(ad_text_replacement)
 
     def toggle_config_variable(self, key: Union[str, ConfigKey]) -> bool:
         toggled = not self.config[key]

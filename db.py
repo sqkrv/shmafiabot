@@ -1,6 +1,9 @@
-from peewee import SqliteDatabase, Model, TextField, PrimaryKeyField, ForeignKeyField, BooleanField
+from os import getenv
 
-db = SqliteDatabase("shmafiabot.db")
+from peewee import Model, TextField, PrimaryKeyField, ForeignKeyField, BooleanField
+from playhouse.db_url import connect
+
+db = connect(getenv('DATABASE_URL'))
 
 
 class BaseModel(Model):
