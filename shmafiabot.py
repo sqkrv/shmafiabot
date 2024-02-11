@@ -4,19 +4,31 @@ import os
 import random
 import re
 from datetime import datetime
-from typing import Union, List, Tuple, Dict, Optional
+from typing import Union, List, Tuple, Dict, Optional, Any
 import time
+import logging
 
-import peewee
 import pyrogram
 from pyrogram import filters, types
 from pyrogram.enums import ParseMode
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from sqlalchemy.orm import sessionmaker
 
 from crocodile_words import Words
-from db import GroupAffiliation, RestrictedUser, Config
+from db import GroupAffiliation, RestrictedUser, Config, GroupUser, GroupChat, User
+from db import engine, AsyncResult, AsyncSession, func, async_sessionmaker
+from sqlalchemy import select, join, delete
 
 CHAT_ID = int(os.getenv('CHAT_ID'))
+ENV = os.getenv("ENV")
+
+Session = async_sessionmaker(bind=engine, expire_on_commit=False)
+# test_session = Session()
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO if ENV == 'dev' else logging.WARNING
+)
 
 
 def text_command(strings: Union[str, List[str]]):
@@ -38,19 +50,9 @@ def admin_command(commands: Union[str, List[str]]):
     return chat_command(commands) & filters.user([356786682, 633834276, 209007669, 55539711])  # яся, Марьям, дед
 
 
-# def crocodile_game_check(func):
-#     @wraps(func)
-#     def wrapper(func, *args):
-#
-#
-#         return func()
-#
-#     return wrap
-
-
-class PingGroup(enum.Enum):
-    ALL = 1
-    DORM = 2
+# class PingGroup(enum.Enum):
+#     ALL = 1
+#     DORM = 2
 
 
 class ConfigKey:
@@ -97,10 +99,24 @@ class ShmafiaBot:
         self.selfbot: Optional[pyrogram.Client] = None
         # self.bot = pyrogram.Client(name, api_id, api_hash, bot_token=bot_token)
         # self.selfbot = pyrogram.Client(name+"_selfbot", api_id, api_hash)
-        self.config: Dict[ConfigKey: bool] = {
-            ConfigKey.ANTI_FISHING: bool(Config.get(Config.key == ConfigKey.ANTI_FISHING).value),
-            ConfigKey.ANTI_PIPISA_ADS: bool(Config.get(Config.key == ConfigKey.ANTI_PIPISA_ADS).value),
-        }
+        self.chats_data: Dict[int, Dict[Any]] = {}
+
+        async def temp(self):
+            async with Session() as session:
+                chats_stmt = await session.execute(select(GroupChat.id, Config.key).select_from(GroupChat).outerjoin(Config, Config.group_chat_id == GroupChat.id))
+                chats = chats_stmt.scalars().all()
+                for chat in chats:
+                    self.chats_data[chat.id] = {
+                        "config": {},
+                        "pings": []
+                    }
+
+                self.chats_data[None] = {
+                    ConfigKey.ANTI_FISHING: bool((await session.scalar(select(Config).filter_by(key=ConfigKey.ANTI_FISHING))).value),
+                    ConfigKey.ANTI_PIPISA_ADS: bool((await session.scalar(select(Config).filter_by(key=ConfigKey.ANTI_PIPISA_ADS))).value)
+                }
+        asyncio.run(temp(self))
+        logging.debug(self.chats_data)
         self.current_antipair: Optional[Tuple[str, Tuple[types.ChatMember, types.ChatMember]]] = None
         self.ANTIPAIR_TIMEDELTA: int = 6
         self.crocodile_game: Optional[CrocodileGame] = None
@@ -141,6 +157,13 @@ class ShmafiaBot:
                    (not member.user.username) or (not member.user.username.lower().endswith('bot') and member.user.id not in exclude_ids)]
         return random.choice(members) if n == 1 else random.sample(members, n)
 
+    async def _add_group_chat(self, group_chat: types.Chat):
+        group_chat_entry = GroupChat(
+            id=group_chat.id,
+            name=group_chat.title
+        )
+
+
     # @bot.on_message(chat_command(["set_nametag", "change_nametag"]))
     async def set_title_command(self, _, message: types.Message):
         """
@@ -151,9 +174,11 @@ class ShmafiaBot:
         """
         author = message.from_user
 
-        if RestrictedUser.get_or_none(RestrictedUser.user_id == author.id):
-            await message.reply("Вам запретили изменять плашку")
-            return
+        async with Session() as session:
+            if await session.scalar(select(func.count()).select_from(RestrictedUser).filter_by(user_id=author.id)):
+            # if RestrictedUser.get_or_none(RestrictedUser.user_id == author.id):
+                await message.reply("Вам запретили изменять плашку")
+                return
 
         args = message.command[1:]
         if not args:
@@ -204,47 +229,61 @@ class ShmafiaBot:
                 member = entity.user
 
             if member:
-                if to_restrict:
-                    try:
-                        RestrictedUser.create(user_id=member.id)
-                    except peewee.IntegrityError:
-                        await message.reply("Указанный пользователь уже ограничен")
-                        return
-                else:
-                    if not RestrictedUser.delete().where(RestrictedUser.user_id == member.id).execute():
-                        await message.reply("Указанный пользователь не ограничен")
-                        return
+                async with Session() as session, session.begin():
+                    if to_restrict:
+                            if not await session.scalar(select(GroupUser).filter_by(user_id=member.id, group_chat_id=chat.id)):
+                                if not await session.scalar(select(User).filter_by(id=member.id)):
+                                    session.add(User(id=member.id, username=member.username, first_name=member.first_name, last_name=member.last_name))
+                                session.add(GroupUser(user_id=member.id, group_chat_id=chat.id))
+                            session.add(RestrictedUser(group_user_id=member.id))
+                            # try:
+                            # RestrictedUser.create(user_id=member.id)
+                        # except peewee.IntegrityError:
+                            await message.reply("Указанный пользователь уже ограничен")
+                            return
+                    else:
+                        deleted = await session.execute(delete(RestrictedUser).filter_by(user_id=member.id))
+                        # if not RestrictedUser.delete().where(RestrictedUser.user_id == member.id).execute():
+                        if True:
+                            await message.reply("Указанный пользователь не ограничен")
+                            # return
                 await message.reply("Пользователь успешено был ограничен" if to_restrict else "С пользователя успешно были сняты ограничения")
             else:
                 await message.reply(f"Пользователь не найден")
 
-    async def ping_func(self, message: types.Message, group: PingGroup):
-        chat = message.chat
-        all_members = [member async for member in chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)]
-        match group:
-            case PingGroup.DORM:
-                mentions = [member.user.mention for member in all_members if GroupAffiliation.get_or_none(GroupAffiliation.user_id == member.user.id)]
-                text_part = "отметить общажников"
-            case PingGroup.ALL | _:
-                mentions = [member.user.mention for member in all_members]
-                text_part = "всех отметить"
-
-        ping_message = ' '.join(message.command[1:]) if len(message.command) > 1 else None
-        mentions_messages = [' '.join(mentions[i:i + 50]) for i in range(0, len(mentions), 50)]  # 50
-        if ping_message:
-            mentions_messages[0] = ping_message + '\n' + mentions_messages[0]
-        else:
-            mentions_messages[0] = f"ВНИМАНИЕ❗️❗️❗\n{message.from_user.mention} решил(а) {text_part}\n" + mentions_messages[0]
-        for mentions_message in mentions_messages:
-            await message.reply(mentions_message)
+    async def ping_func(self, message: types.Message, group):
+        pass
+        # chat = message.chat
+        # all_members = [member async for member in chat.get_members() if not (member.user.username.lower().endswith('bot') if member.user.username else False)]
+        # async with Session() as session:
+        #     match group:
+        #         case PingGroup.DORM:
+        #             mentions = [member.user.mention for member in all_members if GroupAffiliation.get_or_none(GroupAffiliation.user_id == member.user.id)]
+        #             text_part = "отметить общажников"
+        #         case PingGroup.ALL:
+        #             mentions = [member.user.mention for member in all_members]
+        #             text_part = "всех отметить"
+        #         case _:
+        #             mentions = [member.user.mention for member in all_members if (await session.scalar(select(RestrictedUser).filter_by(mention_group_id=123)))]
+        #
+        #     ping_message = ' '.join(message.command[1:]) if len(message.command) > 1 else None
+        #     mentions_messages = [' '.join(mentions[i:i + 50]) for i in range(0, len(mentions), 50)]  # 50
+        #     if ping_message:
+        #         mentions_messages[0] = ping_message + '\n' + mentions_messages[0]
+        #     else:
+        #         mentions_messages[0] = f"ВНИМАНИЕ❗️❗️❗\n{message.from_user.mention} решил(а) {text_part}\n" + mentions_messages[0]
+        #     for mentions_message in mentions_messages:
+        #         await message.reply(mentions_message)
 
     # @bot.on_message(text_command(["@все", "@all"]))
     async def ping_all(self, _, message: types.Message):
-        await self.ping_func(message, PingGroup.ALL)
+        pass
+        # await self.ping_func(message, PingGroup.ALL)
 
     # @bot.on_message(text_command("@общажники"))
     async def ping_dorm(self, _, message: types.Message):
-        await self.ping_func(message, PingGroup.DORM)
+        pass
+        # await self.ping_func(message, PingGroup.DORM)
 
     # @bot.on_message(text_command("шар"))
     async def a8ball(self, _, message: types.Message):
@@ -283,6 +322,9 @@ class ShmafiaBot:
     # @bot.on_message(filters.media & filters.user(1264548383) & filters.chat(CHAT_ID))
     async def pipisa_bot_ad_remover(self, _, message: types.Message):
         if not self.config[ConfigKey.ANTI_PIPISA_ADS]:
+            return
+
+        if message.caption and 't.me' not in message.caption:
             return
 
         message._client = self.bot
@@ -511,14 +553,19 @@ class ShmafiaBot:
             # ), group=1)
 
             # selfbot events
+            # Рыбалка
             self.selfbot.add_handler(MessageHandler(self.fishing_msg_deletion, filters.regex(r"^🎣 \[Рыбалка\] 🎣") & filters.user(200164142) & filters.chat(CHAT_ID)))
-            self.selfbot.add_handler(MessageHandler(self.pipisa_bot_ad_remover, (filters.reply_keyboard | filters.inline_keyboard) & filters.user(1264548383) & filters.chat(CHAT_ID)))
+            # Pipisa Ad
+            self.selfbot.add_handler(MessageHandler(
+                self.pipisa_bot_ad_remover,
+                (filters.reply_keyboard | filters.inline_keyboard | filters.caption) & filters.user(1264548383) & filters.chat(CHAT_ID)
+            ))
             print("Starting bot(s)...")
             # self.bot.run()
             # self.selfbot.run()
 
             # TODO сохранить все сообщения отправленные и удаленные во время игры в мафию и отправить их потом
-            # TODO усиленный режим анти-рыбалки: если сообщения идут подряд и конечное сообщение с нулевой энергией, то удалить весь тред ссообщений
+            # TODO усиленный режим анти-рыбалки: если сообщения идут подряд и конечное сообщение с нулевой энергией, то удалить весь тред сообщений
 
             await pyrogram.compose([self.bot, self.selfbot])
 
