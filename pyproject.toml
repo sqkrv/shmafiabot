@@ -1,0 +1,12 @@
+[project]
+name = "shmafiabot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "peewee>=3.18.1",
+    "psycopg2>=2.9.10",
+    "pyrogram>=2.0.106",
+    "tgcrypto>=1.2.5",
+]
